@@ -1,0 +1,23 @@
+# Environment — never commit real credentials
+.env
+
+# Python virtual environment
+venv/
+
+# Cached audio downloads (runtime data)
+data/downloads/
+
+# Runtime themes database
+data/themes.json
+
+# Claude Code local settings
+.claude/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# OS junk
+.DS_Store
+Thumbs.db
