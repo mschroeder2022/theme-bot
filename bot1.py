@@ -5,7 +5,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import discord
 from discord import app_commands
@@ -46,6 +46,22 @@ VALID_DOMAINS = {
     "soundcloud.com", "www.soundcloud.com",
 }
 
+# Query params that turn a single-track link into a playlist/radio mix.
+# Left in place, yt-dlp walks the whole mix (200+ entries) and never finishes.
+PLAYLIST_PARAMS = {"list", "start_radio", "index", "playlist", "rv"}
+
+def normalize_url(url: str) -> str:
+    """Strip playlist/radio params so a URL always resolves to a single track."""
+    try:
+        parsed = urlparse(url)
+        kept = [
+            (k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+            if k not in PLAYLIST_PARAMS
+        ]
+        return urlunparse(parsed._replace(query=urlencode(kept)))
+    except Exception:
+        return url
+
 def validate_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -69,6 +85,22 @@ def user_audio_path(uid: int) -> Path:
     return DOWNLOADS_DIR / f"user_{uid}.mp3"
 
 # ---------------- DOWNLOAD ----------------
+# Hard ceiling on a single yt-dlp run. A hung download otherwise holds the
+# per-user lock forever, blocking every later join for that user.
+DOWNLOAD_TIMEOUT = 120
+
+def _resolve_ytdlp() -> str:
+    """Prefer the venv's yt-dlp over whatever PATH happens to point at."""
+    candidate = Path(sys.executable).parent / "yt-dlp"
+    return str(candidate) if candidate.exists() else "yt-dlp"
+
+YTDLP = _resolve_ytdlp()
+
+# yt-dlp's default client (android_vr) returns formats whose media URLs YouTube
+# now rejects with HTTP 403. The android client still serves a usable
+# progressive stream, which is plenty for a few seconds of intro audio.
+YTDLP_EXTRACTOR_ARGS = "youtube:player_client=android"
+
 _user_locks: Dict[int, asyncio.Lock] = {}
 
 def get_user_lock(uid: int) -> asyncio.Lock:
@@ -86,19 +118,35 @@ async def ensure_cached_mp3(uid: int, url: str) -> Path:
 
         log.info("Downloading audio for user %s ...", uid)
         cmd = [
-            "yt-dlp", "-x",
+            YTDLP, "-x",
             "--audio-format", "mp3",
             "--audio-quality", "0",
+            "--no-playlist",
+            "--playlist-items", "1",
+            "--extractor-args", YTDLP_EXTRACTOR_ARGS,
             "--match-filter", "duration <= 600",
             "-o", str(out.with_suffix(".%(ext)s")),
-            url,
+            normalize_url(url),
         ]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr_b = await proc.communicate()
+        try:
+            _, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=DOWNLOAD_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            # Never leave a wedged yt-dlp holding this user's lock.
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Download timed out after {DOWNLOAD_TIMEOUT}s"
+            )
 
         if not out.exists() or out.stat().st_size < 50000:
             raise RuntimeError(f"Download failed: {stderr_b.decode(errors='ignore')[-500:]}")
@@ -292,6 +340,8 @@ async def cmd_addtheme(interaction: discord.Interaction, url: str):
         return
 
     await interaction.response.defer()
+
+    url = normalize_url(url)
 
     uid = interaction.user.id
     uid_str = str(uid)
