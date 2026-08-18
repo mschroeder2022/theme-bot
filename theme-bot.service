@@ -7,7 +7,11 @@ Wants=network-online.target
 Type=simple
 User=YOUR_LINUX_USERNAME
 WorkingDirectory=/home/YOUR_LINUX_USERNAME/theme-bot
-ExecStart=/home/YOUR_LINUX_USERNAME/theme-bot/venv/bin/python bot.py
+
+# Must be the venv interpreter: the bot resolves yt-dlp relative to
+# sys.executable, so a system python would silently use a different yt-dlp.
+ExecStart=/home/YOUR_LINUX_USERNAME/theme-bot/venv/bin/python bot1.py
+
 Restart=always
 RestartSec=10
 StandardOutput=journal

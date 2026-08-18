@@ -58,7 +58,7 @@ python bot1.py
 Copy and edit the included service file:
 
 ```bash
-sudo cp "theme-bot(1).service" /etc/systemd/system/theme-bot.service
+sudo cp theme-bot.service /etc/systemd/system/theme-bot.service
 # Edit the file and replace YOUR_LINUX_USERNAME with your username
 sudo systemctl daemon-reload
 sudo systemctl enable --now theme-bot
@@ -70,7 +70,7 @@ sudo systemctl enable --now theme-bot
 theme-bot/
 ├── bot1.py                  # Main bot (slash commands, queue-based playback)
 ├── bot.py                   # Earlier version (prefix commands)
-├── theme-bot(1).service     # systemd service template
+├── theme-bot.service        # systemd service template
 ├── .env.example             # Environment variable template
 └── data/
     └── themes.json          # Created at runtime — stores user theme configs

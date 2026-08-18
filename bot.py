@@ -70,6 +70,8 @@ async def ensure_cached_mp3(uid: int, url: str) -> Path:
             "yt-dlp", "-x",
             "--audio-format", "mp3",
             "--audio-quality", "0",
+            "--no-playlist",
+            "--playlist-items", "1",
             "-o", str(out.with_suffix(".%(ext)s")),
             url,
         ]
